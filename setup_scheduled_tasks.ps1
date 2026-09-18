@@ -6,7 +6,7 @@
 # NOTE: the 05:00 trigger fires at 05:00 in the machine's LOCAL time zone.
 # Verify the home PC's Windows time zone is set to Moscow time before
 # relying on this, or adjust the -At value to compensate.
-$mcServer = "C:\Users\user\mc-server"
+$mcServer = $PSScriptRoot
 
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 

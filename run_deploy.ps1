@@ -3,8 +3,8 @@
 # auto-merges); if either pull fails or nothing changed, deploy.py is not run.
 $ErrorActionPreference = "Stop"
 
-$mcServer = "C:\Users\user\mc-server"
-$modpack = "C:\Users\user\tancmeystery-modpack"
+$mcServer = $PSScriptRoot
+$modpack = Join-Path (Split-Path $PSScriptRoot -Parent) "tancmeystery-modpack"
 $logFile = Join-Path $mcServer "logs\deploy.log"
 
 function Write-Log($msg) {
