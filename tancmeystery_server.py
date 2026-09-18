@@ -9,12 +9,11 @@ Does three things each run:
    cross the configured thresholds.
 """
 import datetime
-import glob
 import os
 import re
 import sys
-import tarfile
 
+from backup import backup_world as _backup_world
 from rcon_client import RconClient
 from server_config import get_rcon_config
 
@@ -42,27 +41,7 @@ def log(msg):
 
 
 def backup_world():
-    if not os.path.isdir(WORLD_DIR):
-        log("world/ not found yet, skipping backup")
-        return
-    os.makedirs(BACKUP_DIR, exist_ok=True)
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = os.path.join(BACKUP_DIR, f"world_{stamp}.tar.gz")
-
-    def skip_locked(tarinfo):
-        if tarinfo.name.endswith("session.lock"):
-            return None
-        return tarinfo
-
-    with tarfile.open(dest, "w:gz") as tar:
-        tar.add(WORLD_DIR, arcname="world", filter=skip_locked)
-    log(f"Backup created: {dest}")
-
-    backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "world_*.tar.gz")))
-    while len(backups) > BACKUP_KEEP:
-        oldest = backups.pop(0)
-        os.remove(oldest)
-        log(f"Rotated out old backup: {oldest}")
+    return _backup_world(WORLD_DIR, BACKUP_DIR, BACKUP_KEEP, log=log)
 
 
 def get_tracked_players(rcon):
