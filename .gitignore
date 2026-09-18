@@ -1,0 +1,23 @@
+# secrets / machine-specific
+server.properties
+
+# runtime state, not config
+whitelist.json
+ops.json
+banned-players.json
+banned-ips.json
+usercache.json
+
+# generated / large, never synced through git
+world/
+backups/
+logs/
+crash-reports/
+.fabric/
+versions/
+mods/*.jar
+mods/*.jar.disabled
+
+# python
+__pycache__/
+*.pyc
