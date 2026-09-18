@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 
 from backup import backup_world
 from rcon_client import RconClient, RconError
@@ -130,12 +131,12 @@ def sync_mods_step(log=print, syncer=sync_mods.sync):
 def start_server(server_dir=SERVER_DIR, start_ps1=START_PS1):
     subprocess.Popen([
         "powershell", "-NoProfile", "-Command",
-        f"Start-Process powershell -ArgumentList '-NoExit','-File','{start_ps1}' "
-        f"-WorkingDirectory '{server_dir}'",
+        f"Start-Process powershell -ArgumentList '-File','{start_ps1}' "
+        f"-WorkingDirectory '{server_dir}' -WindowStyle Hidden",
     ])
 
 
-def verify_online(rcon_config, timeout=60, poll_interval=5, sleep=time.sleep, log=print,
+def verify_online(rcon_config, timeout=300, poll_interval=5, sleep=time.sleep, log=print,
                    rcon_factory=RconClient):
     waited = 0
     while waited < timeout:
@@ -153,9 +154,18 @@ def verify_online(rcon_config, timeout=60, poll_interval=5, sleep=time.sleep, lo
 
 def main():
     log = make_logger()
-    rcon_config = get_rcon_config()
 
-    backup_world(WORLD_DIR, BACKUP_DIR, log=log)
+    try:
+        rcon_config = get_rcon_config()
+    except (FileNotFoundError, KeyError) as e:
+        log(f"Could not read RCON config from server.properties, aborting deploy: {e}")
+        sys.exit(1)
+
+    try:
+        backup_world(WORLD_DIR, BACKUP_DIR, prefix="predeploy", keep=3, log=log)
+    except Exception as e:
+        log(f"World backup failed, aborting deploy before touching the running server: {e}")
+        sys.exit(1)
 
     try:
         with RconClient(**rcon_config) as rcon:
@@ -183,4 +193,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(
+                f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+                f"UNHANDLED EXCEPTION:\n{traceback.format_exc()}\n"
+            )
+        raise

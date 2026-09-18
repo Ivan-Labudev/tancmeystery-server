@@ -51,5 +51,25 @@ class BackupWorldTests(unittest.TestCase):
         )
 
 
+    def test_custom_prefix_uses_separate_rotation_pool(self):
+        # Seed 7 "world_*" backups (the hourly job's pool) at the keep limit.
+        os.makedirs(self.backup_dir)
+        for i in range(7):
+            path = os.path.join(self.backup_dir, f"world_202601{i:02d}_000000.tar.gz")
+            with open(path, "wb") as f:
+                f.write(b"fake")
+
+        result = backup.backup_world(
+            self.world_dir, self.backup_dir, keep=3, log=self.log, prefix="predeploy"
+        )
+
+        self.assertTrue(os.path.basename(result).startswith("predeploy_"))
+        world_backups = glob.glob(os.path.join(self.backup_dir, "world_*.tar.gz"))
+        predeploy_backups = glob.glob(os.path.join(self.backup_dir, "predeploy_*.tar.gz"))
+        # The pre-existing 7 "world_*" backups must be untouched by a "predeploy_" rotation.
+        self.assertEqual(len(world_backups), 7)
+        self.assertEqual(len(predeploy_backups), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

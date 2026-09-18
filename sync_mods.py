@@ -76,9 +76,16 @@ def has_allowed_scheme(url):
 
 
 def download(url, dest_path):
+    tmp_path = dest_path + ".part"
     req = urllib.request.Request(url, headers={"User-Agent": "tancmeystery-server-sync/1.0"})
-    with urllib.request.urlopen(req) as resp, open(dest_path, "wb") as out:
-        out.write(resp.read())
+    try:
+        with urllib.request.urlopen(req) as resp, open(tmp_path, "wb") as out:
+            out.write(resp.read())
+        os.replace(tmp_path, dest_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 
 def verify_hash(path, expected_hash, hash_format="sha512"):

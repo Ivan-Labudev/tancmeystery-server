@@ -6,6 +6,6 @@ $running = Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
     Where-Object { $_.CommandLine -like '*fabric-server-launch.jar*' }
 
 if (-not $running) {
-    Start-Process powershell -ArgumentList '-NoExit', '-File', "$mcServer\start.ps1" `
-        -WorkingDirectory $mcServer
+    Start-Process powershell -ArgumentList '-File', "$mcServer\start.ps1" `
+        -WorkingDirectory $mcServer -WindowStyle Hidden
 }

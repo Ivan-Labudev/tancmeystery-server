@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import sync_mods
 
@@ -248,6 +249,31 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(result["downloaded"], [])
         self.assertEqual(len(result["failed"]), 1)
         self.assertEqual(result["failed"][0][0], "waystones.pw.toml")
+
+
+class DownloadTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.dest = os.path.join(self.tmp, "out.jar")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_cleans_up_partial_file_on_failure(self):
+        with mock.patch("sync_mods.urllib.request.urlopen", side_effect=OSError("network unreachable")):
+            with self.assertRaises(OSError):
+                sync_mods.download("https://example.com/x.jar", self.dest)
+        self.assertFalse(os.path.exists(self.dest))
+        self.assertFalse(os.path.exists(self.dest + ".part"))
+
+    def test_writes_dest_on_success(self):
+        fake_resp = mock.MagicMock()
+        fake_resp.__enter__.return_value.read.return_value = b"jar bytes"
+        with mock.patch("sync_mods.urllib.request.urlopen", return_value=fake_resp):
+            sync_mods.download("https://example.com/x.jar", self.dest)
+        self.assertTrue(os.path.exists(self.dest))
+        with open(self.dest, "rb") as f:
+            self.assertEqual(f.read(), b"jar bytes")
 
 
 if __name__ == "__main__":

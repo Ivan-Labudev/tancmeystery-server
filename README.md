@@ -30,3 +30,19 @@ mod: update the relevant `.pw.toml` (e.g. via `packwiz.exe modrinth add --projec
 sync_mods.py`) picks it up on the server. The client `mods.zip` for players is rebuilt and
 handed out separately — there's no client auto-update (players are on TLauncher, not a
 packwiz-aware launcher).
+
+## Known machine-specific setup steps
+
+- **JDK path**: `start.ps1` invokes `java` — check the exact path/version it expects matches what's
+  actually installed on this machine (Java 17+ for Fabric 1.20.1) before first start; adjust the
+  script if not.
+- **Fabric server install**: this repo does not track `fabric-server-launch.jar`, `libraries/`,
+  `server.jar`, or `fabric-installer.jar` (binaries, not source). On a new machine, run the Fabric
+  installer for Minecraft 1.20.1 to produce these before the first `start.ps1`/`start.bat` run, and
+  accept `eula.txt`.
+- **Stale mod jars after a version bump**: `sync_mods.py` never deletes an old jar when a mod's
+  `.pw.toml` moves to a new filename (e.g. a version bump). Before restarting after bumping a
+  mod's version in `tancmeystery-modpack`, manually remove the old jar from `mc-server\mods\` —
+  otherwise Fabric can fail to start with two jars providing the same mod.
+- **Scheduled tasks run as SYSTEM**: `setup_scheduled_tasks.ps1` registers both tasks under the
+  SYSTEM account so they fire at boot and on schedule without anyone being logged in.

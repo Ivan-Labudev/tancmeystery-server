@@ -47,4 +47,15 @@ Write-Log ("Changes detected (mc-server {0}->{1}, modpack {2}->{3}), running dep
     $modpackResult.Before.Substring(0,7), $modpackResult.After.Substring(0,7))
 
 Set-Location $mcServer
+
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Log "ERROR: 'python' not found on PATH for this session - cannot run deploy.py"
+    exit 1
+}
+
 python deploy.py
+$exitCode = $LASTEXITCODE
+if ($exitCode -ne 0) {
+    Write-Log "deploy.py exited with code $exitCode"
+}
+exit $exitCode

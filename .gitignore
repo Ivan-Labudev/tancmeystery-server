@@ -15,8 +15,13 @@ logs/
 crash-reports/
 .fabric/
 versions/
-mods/*.jar
-mods/*.jar.disabled
+mods/**/*.jar
+mods/**/*.jar.disabled
+*.log
+fabric-installer.jar
+fabric-server-launch.jar
+server.jar
+libraries/
 
 # python
 __pycache__/
