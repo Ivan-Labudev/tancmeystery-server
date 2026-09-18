@@ -17,7 +17,11 @@ function Write-Log($msg) {
 function Pull-Repo($path) {
     Set-Location $path
     $before = git rev-parse HEAD
-    git pull --ff-only 2>&1 | Out-Null
+    # No 2>&1 here: merging stderr into the success stream under
+    # $ErrorActionPreference = "Stop" turns git's normal progress output
+    # (printed even on a successful pull) into a terminating exception in
+    # Windows PowerShell 5.1. $LASTEXITCODE alone is the reliable signal.
+    git pull --ff-only | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "git pull --ff-only failed in $path"
     }
