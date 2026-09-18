@@ -55,22 +55,35 @@ class LoadPackEntriesTests(unittest.TestCase):
         shutil.rmtree(self.tmp)
 
     def test_includes_server_and_both_side_mods(self):
-        entries = sync_mods.load_pack_entries(self.tmp)
+        entries, errors = sync_mods.load_pack_entries(self.tmp)
         names = [e["name"] for e in entries]
         self.assertIn("Waystones", names)
 
     def test_excludes_client_only_mods(self):
-        entries = sync_mods.load_pack_entries(self.tmp)
+        entries, errors = sync_mods.load_pack_entries(self.tmp)
         names = [e["name"] for e in entries]
         self.assertNotIn("Bobby", names)
 
     def test_entry_has_filename_url_and_hash(self):
-        entries = sync_mods.load_pack_entries(self.tmp)
+        entries, errors = sync_mods.load_pack_entries(self.tmp)
         waystones = next(e for e in entries if e["name"] == "Waystones")
         self.assertEqual(waystones["filename"], "waystones-fabric-1.20.1-14.1.21.jar")
         self.assertTrue(waystones["url"].startswith("https://cdn.modrinth.com/"))
         self.assertEqual(waystones["hash"], FAKE_JAR_SHA512)
         self.assertEqual(waystones["hash_format"], "sha512")
+
+    def test_reports_missing_hash_key_as_error_not_crash(self):
+        broken_toml = SERVER_SIDE_TOML.replace(
+            'hash = "{}"'.format(FAKE_JAR_SHA512), ""
+        )
+        with open(os.path.join(self.tmp, "waystones.pw.toml"), "w", encoding="utf-8") as f:
+            f.write(broken_toml)
+        entries, errors = sync_mods.load_pack_entries(self.tmp)
+        names = [e["name"] for e in entries]
+        self.assertNotIn("Waystones", names)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0][0], "waystones.pw.toml")
+        self.assertIn("hash", errors[0][1])
 
 
 class AlreadyPresentTests(unittest.TestCase):
@@ -219,6 +232,22 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(result["downloaded"], [])
         self.assertEqual(len(result["failed"]), 1)
         self.assertIn("disallowed URL scheme", result["failed"][0][1])
+
+    def test_malformed_manifest_entry_becomes_failed_not_a_crash(self):
+        broken_toml = SERVER_SIDE_TOML.replace(
+            'hash = "{}"'.format(FAKE_JAR_SHA512), ""
+        )
+        with open(os.path.join(self.modpack_dir, "waystones.pw.toml"), "w", encoding="utf-8") as f:
+            f.write(broken_toml)
+
+        def failing_downloader(url, dest_path):
+            raise AssertionError("should not be called")
+
+        # Must not raise.
+        result = sync_mods.sync(self.modpack_dir, self.mods_dir, downloader=failing_downloader)
+        self.assertEqual(result["downloaded"], [])
+        self.assertEqual(len(result["failed"]), 1)
+        self.assertEqual(result["failed"][0][0], "waystones.pw.toml")
 
 
 if __name__ == "__main__":

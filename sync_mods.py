@@ -10,7 +10,8 @@ before it's kept, and only http(s) URLs / plain filenames (no path
 separators) from the manifest are ever trusted -- the manifest lives in a
 sibling repo and this script writes into a live server's mods directory
 unattended, so a corrupted or malicious entry must fail closed, not write
-anywhere.
+anywhere, and a single malformed manifest file must not stop every other
+mod from syncing.
 """
 import glob
 import hashlib
@@ -29,21 +30,31 @@ SUPPORTED_HASH_FORMATS = ("sha512",)
 
 
 def load_pack_entries(modpack_mods_dir=MODPACK_MODS_DIR):
+    """Returns (entries, errors). errors is a list of (manifest_filename, reason)
+    for any *.pw.toml that couldn't be parsed into a usable entry, so one bad
+    file never prevents the rest of the manifest from loading."""
     entries = []
+    errors = []
     for path in sorted(glob.glob(os.path.join(modpack_mods_dir, "*.pw.toml"))):
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-        if data.get("side", "both") == "client":
-            continue
-        download = data["download"]
-        entries.append({
-            "name": data["name"],
-            "filename": data["filename"],
-            "url": download["url"],
-            "hash": download["hash"],
-            "hash_format": download.get("hash-format", "sha512"),
-        })
-    return entries
+        manifest_filename = os.path.basename(path)
+        try:
+            with open(path, "rb") as f:
+                data = tomllib.load(f)
+            if data.get("side", "both") == "client":
+                continue
+            download = data["download"]
+            entries.append({
+                "name": data["name"],
+                "filename": data["filename"],
+                "url": download["url"],
+                "hash": download["hash"],
+                "hash_format": download.get("hash-format", "sha512"),
+            })
+        except tomllib.TOMLDecodeError as e:
+            errors.append((manifest_filename, f"invalid TOML: {e}"))
+        except KeyError as e:
+            errors.append((manifest_filename, f"missing required key: {e}"))
+    return entries, errors
 
 
 def already_present(filename, mods_dir=MODS_DIR):
@@ -84,7 +95,10 @@ def sync(modpack_mods_dir=MODPACK_MODS_DIR, mods_dir=MODS_DIR, downloader=downlo
     os.makedirs(mods_dir, exist_ok=True)
     downloaded, skipped, failed = [], [], []
 
-    for entry in load_pack_entries(modpack_mods_dir):
+    entries, load_errors = load_pack_entries(modpack_mods_dir)
+    failed.extend(load_errors)
+
+    for entry in entries:
         filename = entry["filename"]
 
         if not is_safe_filename(filename):
