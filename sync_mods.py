@@ -4,16 +4,28 @@ The *.pw.toml files in tancmeystery-modpack/mods/ are the single source of
 truth for pinned mod versions (shared with the client pack). This script
 downloads the jar for every entry that isn't client-only into mods/, and
 never overwrites a jar (or a manually-disabled one) that's already present.
+
+Every download is verified against the sha512 hash pinned in the manifest
+before it's kept, and only http(s) URLs / plain filenames (no path
+separators) from the manifest are ever trusted -- the manifest lives in a
+sibling repo and this script writes into a live server's mods directory
+unattended, so a corrupted or malicious entry must fail closed, not write
+anywhere.
 """
 import glob
+import hashlib
 import os
 import sys
 import tomllib
+import urllib.parse
 import urllib.request
 
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 MODS_DIR = os.path.join(SERVER_DIR, "mods")
 MODPACK_MODS_DIR = os.path.join(SERVER_DIR, "..", "tancmeystery-modpack", "mods")
+
+ALLOWED_URL_SCHEMES = ("http", "https")
+SUPPORTED_HASH_FORMATS = ("sha512",)
 
 
 def load_pack_entries(modpack_mods_dir=MODPACK_MODS_DIR):
@@ -23,10 +35,13 @@ def load_pack_entries(modpack_mods_dir=MODPACK_MODS_DIR):
             data = tomllib.load(f)
         if data.get("side", "both") == "client":
             continue
+        download = data["download"]
         entries.append({
             "name": data["name"],
             "filename": data["filename"],
-            "url": data["download"]["url"],
+            "url": download["url"],
+            "hash": download["hash"],
+            "hash_format": download.get("hash-format", "sha512"),
         })
     return entries
 
@@ -38,26 +53,66 @@ def already_present(filename, mods_dir=MODS_DIR):
     )
 
 
+def is_safe_filename(filename):
+    return (
+        filename not in ("", ".", "..")
+        and os.path.basename(filename) == filename
+    )
+
+
+def has_allowed_scheme(url):
+    return urllib.parse.urlsplit(url).scheme in ALLOWED_URL_SCHEMES
+
+
 def download(url, dest_path):
     req = urllib.request.Request(url, headers={"User-Agent": "tancmeystery-server-sync/1.0"})
     with urllib.request.urlopen(req) as resp, open(dest_path, "wb") as out:
         out.write(resp.read())
 
 
+def verify_hash(path, expected_hash, hash_format="sha512"):
+    if hash_format not in SUPPORTED_HASH_FORMATS:
+        return False
+    digest = hashlib.new(hash_format)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest() == expected_hash
+
+
 def sync(modpack_mods_dir=MODPACK_MODS_DIR, mods_dir=MODS_DIR, downloader=download):
     os.makedirs(mods_dir, exist_ok=True)
     downloaded, skipped, failed = [], [], []
+
     for entry in load_pack_entries(modpack_mods_dir):
         filename = entry["filename"]
+
+        if not is_safe_filename(filename):
+            failed.append((filename, "unsafe filename (path traversal risk)"))
+            continue
+
         if already_present(filename, mods_dir):
             skipped.append(filename)
             continue
+
+        if not has_allowed_scheme(entry["url"]):
+            failed.append((filename, f"disallowed URL scheme: {entry['url']}"))
+            continue
+
         dest = os.path.join(mods_dir, filename)
         try:
             downloader(entry["url"], dest)
-            downloaded.append(filename)
         except Exception as e:
             failed.append((filename, str(e)))
+            continue
+
+        if not verify_hash(dest, entry["hash"], entry["hash_format"]):
+            os.remove(dest)
+            failed.append((filename, "downloaded file hash does not match manifest"))
+            continue
+
+        downloaded.append(filename)
+
     return {"downloaded": downloaded, "skipped": skipped, "failed": failed}
 
 

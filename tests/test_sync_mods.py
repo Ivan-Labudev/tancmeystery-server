@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import tempfile
@@ -6,7 +7,10 @@ import unittest
 import sync_mods
 
 
-SERVER_SIDE_TOML = """\
+FAKE_JAR_BYTES = b"fake jar bytes"
+FAKE_JAR_SHA512 = hashlib.sha512(FAKE_JAR_BYTES).hexdigest()
+
+SERVER_SIDE_TOML = f"""\
 name = "Waystones"
 filename = "waystones-fabric-1.20.1-14.1.21.jar"
 side = "both"
@@ -14,7 +18,7 @@ side = "both"
 [download]
 url = "https://cdn.modrinth.com/data/LOpKHB2A/versions/LcO5SBoa/waystones-fabric-1.20.1-14.1.21.jar"
 hash-format = "sha512"
-hash = "deadbeef"
+hash = "{FAKE_JAR_SHA512}"
 
 [update]
 [update.modrinth]
@@ -60,11 +64,13 @@ class LoadPackEntriesTests(unittest.TestCase):
         names = [e["name"] for e in entries]
         self.assertNotIn("Bobby", names)
 
-    def test_entry_has_filename_and_url(self):
+    def test_entry_has_filename_url_and_hash(self):
         entries = sync_mods.load_pack_entries(self.tmp)
         waystones = next(e for e in entries if e["name"] == "Waystones")
         self.assertEqual(waystones["filename"], "waystones-fabric-1.20.1-14.1.21.jar")
         self.assertTrue(waystones["url"].startswith("https://cdn.modrinth.com/"))
+        self.assertEqual(waystones["hash"], FAKE_JAR_SHA512)
+        self.assertEqual(waystones["hash_format"], "sha512")
 
 
 class AlreadyPresentTests(unittest.TestCase):
@@ -86,6 +92,43 @@ class AlreadyPresentTests(unittest.TestCase):
         self.assertTrue(sync_mods.already_present("foo.jar", self.tmp))
 
 
+class SafetyHelperTests(unittest.TestCase):
+    def test_is_safe_filename_rejects_traversal(self):
+        self.assertFalse(sync_mods.is_safe_filename("../evil.jar"))
+        self.assertFalse(sync_mods.is_safe_filename("sub/evil.jar"))
+        self.assertFalse(sync_mods.is_safe_filename(".."))
+        self.assertFalse(sync_mods.is_safe_filename(""))
+
+    def test_is_safe_filename_accepts_plain_name(self):
+        self.assertTrue(sync_mods.is_safe_filename("waystones-fabric-1.20.1-14.1.21.jar"))
+
+    def test_has_allowed_scheme(self):
+        self.assertTrue(sync_mods.has_allowed_scheme("https://cdn.modrinth.com/x.jar"))
+        self.assertTrue(sync_mods.has_allowed_scheme("http://example.com/x.jar"))
+        self.assertFalse(sync_mods.has_allowed_scheme("file:///etc/passwd"))
+        self.assertFalse(sync_mods.has_allowed_scheme("ftp://example.com/x.jar"))
+
+
+class VerifyHashTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "f.bin")
+        with open(self.path, "wb") as f:
+            f.write(FAKE_JAR_BYTES)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_matches_correct_hash(self):
+        self.assertTrue(sync_mods.verify_hash(self.path, FAKE_JAR_SHA512))
+
+    def test_rejects_wrong_hash(self):
+        self.assertFalse(sync_mods.verify_hash(self.path, "0" * 128))
+
+    def test_rejects_unsupported_hash_format(self):
+        self.assertFalse(sync_mods.verify_hash(self.path, FAKE_JAR_SHA512, hash_format="md5"))
+
+
 class SyncTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -98,13 +141,13 @@ class SyncTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
-    def test_downloads_missing_mod(self):
+    def test_downloads_and_verifies_missing_mod(self):
         calls = []
 
         def fake_downloader(url, dest_path):
             calls.append((url, dest_path))
             with open(dest_path, "wb") as f:
-                f.write(b"fake jar bytes")
+                f.write(FAKE_JAR_BYTES)
 
         result = sync_mods.sync(self.modpack_dir, self.mods_dir, downloader=fake_downloader)
         self.assertEqual(result["downloaded"], ["waystones-fabric-1.20.1-14.1.21.jar"])
@@ -131,6 +174,51 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(result["downloaded"], [])
         self.assertEqual(len(result["failed"]), 1)
         self.assertEqual(result["failed"][0][0], "waystones-fabric-1.20.1-14.1.21.jar")
+
+    def test_rejects_hash_mismatch_and_removes_partial_file(self):
+        def tampered_downloader(url, dest_path):
+            with open(dest_path, "wb") as f:
+                f.write(b"tampered bytes, not the pinned jar")
+
+        result = sync_mods.sync(self.modpack_dir, self.mods_dir, downloader=tampered_downloader)
+        self.assertEqual(result["downloaded"], [])
+        self.assertEqual(len(result["failed"]), 1)
+        name, reason = result["failed"][0]
+        self.assertEqual(name, "waystones-fabric-1.20.1-14.1.21.jar")
+        self.assertIn("hash", reason)
+        self.assertFalse(os.path.exists(os.path.join(self.mods_dir, name)))
+
+    def test_rejects_unsafe_filename_without_downloading(self):
+        unsafe_toml = SERVER_SIDE_TOML.replace(
+            'filename = "waystones-fabric-1.20.1-14.1.21.jar"',
+            'filename = "../evil.jar"',
+        )
+        with open(os.path.join(self.modpack_dir, "waystones.pw.toml"), "w", encoding="utf-8") as f:
+            f.write(unsafe_toml)
+
+        def failing_downloader(url, dest_path):
+            raise AssertionError("should not be called")
+
+        result = sync_mods.sync(self.modpack_dir, self.mods_dir, downloader=failing_downloader)
+        self.assertEqual(result["downloaded"], [])
+        self.assertEqual(len(result["failed"]), 1)
+        self.assertIn("unsafe filename", result["failed"][0][1])
+
+    def test_rejects_disallowed_url_scheme_without_downloading(self):
+        unsafe_toml = SERVER_SIDE_TOML.replace(
+            'url = "https://cdn.modrinth.com/data/LOpKHB2A/versions/LcO5SBoa/waystones-fabric-1.20.1-14.1.21.jar"',
+            'url = "file:///etc/passwd"',
+        )
+        with open(os.path.join(self.modpack_dir, "waystones.pw.toml"), "w", encoding="utf-8") as f:
+            f.write(unsafe_toml)
+
+        def failing_downloader(url, dest_path):
+            raise AssertionError("should not be called")
+
+        result = sync_mods.sync(self.modpack_dir, self.mods_dir, downloader=failing_downloader)
+        self.assertEqual(result["downloaded"], [])
+        self.assertEqual(len(result["failed"]), 1)
+        self.assertIn("disallowed URL scheme", result["failed"][0][1])
 
 
 if __name__ == "__main__":
