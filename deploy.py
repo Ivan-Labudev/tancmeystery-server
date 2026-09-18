@@ -91,10 +91,15 @@ def kill_pid(pid):
 
 
 def stop_server(rcon, timeout=60, poll_interval=2, sleep=time.sleep, log=print,
-                find_pids=find_server_pids, is_alive=pid_alive, kill=kill_pid):
+                 find_pids=find_server_pids, is_alive=pid_alive, kill=kill_pid):
     pids = find_pids()
     rcon.command("stop")
     log("Sent RCON stop, waiting for process to exit")
+
+    if not pids:
+        log("Could not identify any server process to watch (find_pids returned none) - "
+            "cannot confirm the old server actually stopped")
+        return None
 
     waited = 0
     while waited < timeout:
@@ -155,9 +160,14 @@ def main():
     try:
         with RconClient(**rcon_config) as rcon:
             broadcast_warnings(rcon, log=log)
-            stop_server(rcon, log=log)
+            stopped = stop_server(rcon, log=log)
     except (ConnectionRefusedError, OSError, RconError) as e:
         log(f"Could not reach RCON to warn/stop server, aborting deploy: {e}")
+        sys.exit(1)
+
+    if stopped is None:
+        log("Could not confirm the old server process stopped; aborting deploy before "
+            "restart to avoid running two servers at once. Check manually.")
         sys.exit(1)
 
     if not sync_mods_step(log=log):

@@ -92,6 +92,29 @@ class StopServerTests(unittest.TestCase):
         self.assertEqual(killed, [111])
 
 
+    def test_returns_none_and_skips_wait_when_no_pids_found(self):
+        commands = []
+
+        class FakeRcon:
+            def command(self, cmd):
+                commands.append(cmd)
+
+        sleeps = []
+        result = deploy.stop_server(
+            FakeRcon(),
+            timeout=60,
+            poll_interval=1,
+            sleep=sleeps.append,
+            log=lambda m: None,
+            find_pids=lambda: [],
+            is_alive=lambda pid: True,
+            kill=lambda pid: None,
+        )
+        self.assertIsNone(result)
+        self.assertEqual(commands, ["stop"])
+        self.assertEqual(sleeps, [])  # no pids to wait on, must not sleep at all
+
+
 class VerifyOnlineTests(unittest.TestCase):
     def test_true_on_first_success(self):
         class FakeRcon:
