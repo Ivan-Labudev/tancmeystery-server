@@ -1,0 +1,84 @@
+# Notes for Claude Code (machine-specific gotchas)
+
+Read this before touching scripts or setting the server up on a new machine. The README describes the
+pipeline; this file records what turned out to differ between machines.
+
+## Paths differ between machines
+
+- The scripts were originally written on a machine whose Windows account was named `user`, and hardcoded
+  `C:\Users\user\mc-server` / `C:\Users\user\tancmeystery-modpack`. The home PC (the real server) uses a
+  different account name, so those paths did not exist there.
+- Fixed in commit `8632a50`: `run_deploy.ps1`, `ensure_server_running.ps1` and
+  `setup_scheduled_tasks.ps1` now derive everything from `$PSScriptRoot`. The two repos **must stay
+  siblings in the same parent folder** (`<parent>\mc-server` and `<parent>\tancmeystery-modpack`) -
+  `run_deploy.ps1` finds the modpack as `<parent of mc-server>\tancmeystery-modpack`. The server repo must
+  be cloned into a folder named `mc-server` (the GitHub repo name is `tancmeystery-server`, so use
+  `git clone <url> mc-server`).
+- `start.ps1` **still hardcodes the JDK path**
+  (`C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot\bin\java.exe`). On another machine the Temurin
+  patch version (and folder name) will differ - check `Get-ChildItem "C:\Program Files\Eclipse Adoptium"` and
+  edit the path, or the server will not start. Also `-Xmx12G` assumes plenty of RAM; lower it on small machines.
+- Do not put user names, tunnel addresses, RCON passwords or player nicknames in this repo (it is public).
+
+## Setting up a second / test server
+
+1. Clone both repos as siblings (see above), install Java 17 (Temurin) and Python 3 **for all users**
+   (scheduled tasks run as SYSTEM and need `python` on the machine PATH).
+2. Follow the README first-time setup, plus: run the Fabric installer for Minecraft 1.20.1 with loader
+   `0.19.5` (the version pinned in `tancmeystery-modpack/pack.toml`) into `mc-server\`, write
+   `eula.txt`, copy `server.properties.template` to `server.properties` and generate a **new** random
+   `rcon.password` (never reuse the production one).
+3. `python sync_mods.py` downloads the pinned jars (verified against the sha512 in each `.pw.toml`).
+4. `world/` and `backups/` are gitignored. To experiment on a copy of the live world, copy a backup tarball
+   over and extract it so that `world\` sits in `mc-server\`. The Simon Says datapack is in
+   `tancmeystery_datapack.zip`: extract it into `world\datapacks\tancmeystery\` so `pack.mcmeta` and `data\`
+   sit directly in that folder (the zip contains a `tancmeystery/` subfolder - flatten it).
+5. Then `python setup_luckperms.py` for the rank groups.
+6. Do **not** register the scheduled tasks on a test machine unless you want it auto-deploying from `master`.
+
+## SYSTEM scheduled tasks
+
+- Tasks run as SYSTEM. SYSTEM has no GitHub credentials, so both repos are public (pull needs no login) and
+  `safe.directory` for both folders was added to the **system-wide** git config (`git config --system`),
+  otherwise git refuses with "dubious ownership" for folders owned by another account.
+- `run_deploy.ps1` compares HEAD before/after `git pull --ff-only` in both repos. Any commit to either repo
+  therefore triggers a full `deploy.py` run at 05:00 (15 min in-game warnings, backup, restart), even if the
+  mods are already installed. `deploy.py` always sleeps through the 15/10/5/1 minute warnings.
+- Local uncommitted edits to tracked files make `git pull --ff-only` fail if upstream touches the same file.
+  Commit and push script fixes instead of leaving them local.
+
+## Editing the modpack (packwiz is not installed)
+
+- `packwiz.exe` is not present on the home PC. New mods were added by writing `mods/<slug>.pw.toml`
+  by hand (name, filename, side, `[download]` url + sha512, `[update.modrinth]` mod-id + version) from the
+  Modrinth API, then updating `index.toml` and the index hash in `pack.toml`.
+- **Line endings matter for hashes.** Git blobs are LF; on Windows (`core.autocrlf=true`) the working tree
+  is CRLF. `index.toml` hashes (sha256) and the `pack.toml` index hash are computed over the **LF** content.
+  Hashing the CRLF working-tree copy gives mismatches everywhere. Write new manifests with LF.
+- `side` mapping used: client unsupported -> `server`, server unsupported -> `client`, else `both`.
+  `sync_mods.py` skips `side = "client"`.
+- Modrinth "required dependency" metadata is not always complete. Repurposed Structures needs MidnightLib
+  >= 1.4.0 without declaring it. **Always start the server and read the log before pushing**, because the
+  nightly deploy applies whatever is on `master`.
+- The client `mods.zip` is not tracked (`dist/` is gitignored). It is built from the manifests: every
+  entry with `side` = `both` or `client`, jars flat at the zip root. Players must clear their `mods` folder
+  and extract so the jars sit directly in `.minecraft\mods` (not in a nested folder).
+
+## Running and checking the server
+
+- Starting via `cmd /c start.bat` in a hidden window did not launch the server once; running
+  `Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','start.ps1'
+  -WorkingDirectory <mc-server> -WindowStyle Hidden` works. A cold start with the current mod set takes
+  well under a minute on the existing world (first world generation took ~80 s).
+- Graceful restart: RCON `save-all flush`, `stop`, wait until no `java.exe` with `fabric-server-launch.jar`
+  remains, back up (`backup.backup_world`), `python sync_mods.py`, start, wait for `Done (...)!` in
+  `logs\latest.log`, then check the log for `ERROR` / "Incompatible mods".
+- LuckPerms on Fabric returns **empty strings over RCON** (even for `lp listgroups`), so `setup_luckperms.py`
+  printing nothing does not mean failure. Verify with `lp export <name>` and read
+  `mods\luckperms\<name>.json.gz`, then delete it.
+- `online-mode=false` (players use offline launchers): nicknames are not authenticated, so anyone can join
+  under an operator's nickname. Keep that in mind before granting op, and consider an offline-auth mod.
+- Simple Voice Chat needs its own UDP tunnel; set `voice_host=<host>:<port>` in
+  `config/voicechat/voicechat-server.properties` (config is read at startup - restart after editing).
+- Sleep/hibernate must stay disabled on the server PC (`powercfg /change standby-timeout-ac 0`), otherwise
+  the server and the tunnel die when Windows sleeps.
