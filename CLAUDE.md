@@ -75,6 +75,13 @@ pipeline; this file records what turned out to differ between machines.
   from JEI). Clients on an older loader (e.g. TLauncher's bundled "Fabric 1.20.1", 0.17.2) get "requires
   version X or later of Fabric Loader". State the required loader in every release note; players install it
   with the official Fabric installer (Client tab, 1.20.1, loader 0.19.5).
+- **Decision: JEI and Farmer's Delight were removed on purpose.** Players' TLauncher ships Fabric Loader
+  0.17.2; JEI needs >= 0.19.4 and Farmer's Delight (bundled Porting Lib) >= 0.18.2, and Fabric refuses to start
+  the game if any single mod needs a newer loader. Do not re-add mods whose loader lower bound exceeds what the
+  players run - check the bound first (highest `fabricloader` requirement in the client zip is currently
+  0.16.10, from Fabric API). After removing a mod, delete its jar from `mc-server\mods` by hand - the deploy's
+  `sync_mods.py` never deletes - and expect harmless "missing from registry / unknown attribute" warnings once,
+  from leftover player data.
 - **Publishing the client zip:** as an asset of a GitHub Release on the modpack repo (tag
   `client-YYYY-MM-DD[-n]`, `--target master`), using the GitHub CLI (`gh`, portable zip, log in with
   `gh auth login --web`). Stable link:
