@@ -71,17 +71,27 @@ pipeline; this file records what turned out to differ between machines.
   publishing a client zip, check it offline: read `fabric.mod.json` of every jar (and its nested `jars`),
   collect `id` + `provides`, and verify every `depends` entry (except minecraft/java/fabricloader) is present.
   Fix by setting the library's manifest to `side = "both"`, then refresh `index.toml` + `pack.toml` hashes.
-- **Minimum Fabric Loader for clients** = the highest `fabricloader` lower bound among the jars (0.16.9 today,
-  from Fabric Language Kotlin). Clients on an older loader (e.g. TLauncher's bundled "Fabric 1.20.1", 0.17.2)
-  get "requires version X or later of Fabric Loader". State the required loader in every release note; players
-  install it with the official Fabric installer (Client tab, 1.20.1, loader 0.19.5).
+- **Minimum Fabric Loader for clients** = the highest `fabricloader` lower bound among the jars **including
+  every jar-in-jar (nested) module** (0.17.2 today, from Pop-up Emotes). Clients on an older loader (e.g.
+  TLauncher's bundled "Fabric 1.20.1", 0.17.2) get "requires version X or later of Fabric Loader". State the
+  required loader in every release note; players install it with the official Fabric installer (Client tab,
+  1.20.1, loader 0.19.5).
+- **Booting the server does NOT verify the client loader floor** (the server runs 0.19.5; players run 0.17.2).
+  Farmer's Delight 2.5.0-2.5.2 declare `fabricloader >= 0.16` on the top-level mod, but the Porting Lib modules
+  bundled inside them need >= 0.18.2. A 0.17.2 client silently drops those nested modules and crashes at launch
+  with "Mixin transformation of net.minecraft.class_1792 failed ... PlacePumpkinPieMixin ...
+  ClassNotFoundException: porting_lib.config.ModConfigSpec$BooleanValue". Always compute the floor over the
+  whole client zip, nested modules included (read every nested `fabric.mod.json` recursively).
 - **Decision: JEI, Farmer's Delight and Ranged Weapon API are pinned below their latest release on purpose.**
   Players' TLauncher ships Fabric Loader 0.17.2. Latest JEI needs >= 0.19.4, latest Farmer's Delight (bundled
   Porting Lib) >= 0.18.2, latest Ranged Weapon API (2.x, the version with the `velocity` attribute Jewelry
   wants) >= 0.19.5 — all above the client floor, so Fabric would refuse to start the game for every player.
   Pinned to the newest release still under 0.17.2 instead: JEI 15.49.0.194 (>=0.16.3), Farmer's Delight
-  2.5.2 (>=0.16), Ranged Weapon API 1.1.4 (>=0.15.7, but it only registers `damage`/`haste` — no `velocity`,
-  so that one Jewelry effect stays dead). Do not re-add a newer version of any of these without checking its
+  **2.4.1** (>=0.15.7 even with its bundled Porting Lib; 2.5.0-2.5.2 look fine at top level but are not, see
+  above), Ranged Weapon API 1.1.4 (>=0.15.7, but it only registers `damage`/`haste` — no `velocity`, so that
+  one Jewelry effect stays dead). Two Supplementaries integration recipes (`ash_bricks_fd`, `lapis_bricks_fd`)
+  fail to parse at server start ("An ingredient entry needs either a tag or an item") with both Farmer's
+  Delight 2.5.2 and 2.4.1 - harmless, those two recipes just don't exist. Do not re-add a newer version of any of these without checking its
   `fabricloader` floor first. After removing/downgrading a mod, delete the old jar from `mc-server\mods` by
   hand - the deploy's `sync_mods.py` never deletes - and expect harmless "missing from registry / unknown
   attribute" warnings once, from leftover player data.
