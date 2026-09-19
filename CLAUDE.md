@@ -44,6 +44,21 @@ pipeline; this file records what turned out to differ between machines.
 - Tasks run as SYSTEM. SYSTEM has no GitHub credentials, so both repos are public (pull needs no login) and
   `safe.directory` for both folders was added to the **system-wide** git config (`git config --system`),
   otherwise git refuses with "dubious ownership" for folders owned by another account.
+- **What the unattended chain needs, and what was verified on the home PC:** `Tancmeystery-EnsureRunning`
+  (trigger: at startup, SYSTEM) starts the server with nobody logged in; `playitd` (Windows service,
+  Automatic) brings the tunnel up. Neither depends on a user session, and neither ever shows a UAC prompt
+  (SYSTEM tasks and services do not prompt; the only startup items are asInvoker). Tested by running the task
+  as Windows would: server up in ~6 s as `NT AUTHORITY\SYSTEM` in session 0, `Done` in ~14 s, task result 0,
+  server keeps running after the task finishes. NOT tested with a real reboot.
+- The machine's PowerShell execution policy is `Undefined` everywhere, i.e. effectively `Restricted`. Every
+  place that launches a script therefore passes `-ExecutionPolicy Bypass` explicitly (the tasks, and the child
+  `powershell` started by `ensure_server_running.ps1` and `deploy.py`). Do not rely on inheriting Bypass.
+- `setup_scheduled_tasks.ps1` registers the tasks with no execution time limit and battery rules off (the
+  default 72 h limit would be a risk for a long-running action, and a PC on a UPS counts as "on battery").
+  Tasks registered as SYSTEM/Highest are invisible to a non-elevated `Get-ScheduledTask`; inspect them elevated.
+- Windows auto sign-in is not required for any of this. On the home PC the account is a Microsoft account and
+  "only allow Windows Hello sign-in" is enforced, which disables auto sign-in; enabling it is a manual choice
+  of the owner (it needs the account password) - do not flip those settings on their behalf.
 - `run_deploy.ps1` compares HEAD before/after `git pull --ff-only` in both repos. Any commit to either repo
   therefore triggers a full `deploy.py` run at 05:00 (15 min in-game warnings, backup, restart), even if the
   mods are already installed. `deploy.py` always sleeps through the 15/10/5/1 minute warnings.

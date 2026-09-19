@@ -146,6 +146,21 @@ class StopServerTests(unittest.TestCase):
         self.assertEqual(sleeps, [])  # no pids to wait on, must not sleep at all
 
 
+class StartServerTests(unittest.TestCase):
+    def test_child_powershell_gets_explicit_execution_policy_bypass(self):
+        # The machine execution policy is Undefined (= Restricted). Unattended runs (SYSTEM scheduled task)
+        # must not rely on the child process inheriting Bypass, or the server never comes back after a deploy.
+        from unittest import mock
+
+        with mock.patch("deploy.subprocess.Popen") as popen:
+            deploy.start_server(server_dir=r"C:\srv", start_ps1=r"C:\srv\start.ps1")
+
+        command = popen.call_args[0][0][-1]
+        self.assertIn("-ExecutionPolicy", command)
+        self.assertIn("Bypass", command)
+        self.assertIn(r"C:\srv\start.ps1", command)
+
+
 class VerifyOnlineTests(unittest.TestCase):
     def test_true_on_first_success(self):
         class FakeRcon:

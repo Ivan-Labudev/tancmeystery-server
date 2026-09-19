@@ -137,7 +137,7 @@ def sync_mods_step(log=print, syncer=sync_mods.sync):
 def start_server(server_dir=SERVER_DIR, start_ps1=START_PS1):
     subprocess.Popen([
         "powershell", "-NoProfile", "-Command",
-        f"Start-Process powershell -ArgumentList '-File','{start_ps1}' "
+        f"Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','{start_ps1}' "
         f"-WorkingDirectory '{server_dir}' -WindowStyle Hidden",
     ])
 
