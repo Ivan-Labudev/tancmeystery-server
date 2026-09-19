@@ -66,6 +66,21 @@ pipeline; this file records what turned out to differ between machines.
 - The client `mods.zip` is not tracked (`dist/` is gitignored). It is built from the manifests: every
   entry with `side` = `both` or `client`, jars flat at the zip root. Players must clear their `mods` folder
   and extract so the jars sit directly in `.minecraft\mods` (not in a nested folder).
+- **Modrinth `side` flags are wrong for some libraries.** `structure-pool-api` is listed server-only, but
+  Jewelry (both sides) hard-depends on it, so clients crashed with "Install structure_pool_api". Before
+  publishing a client zip, check it offline: read `fabric.mod.json` of every jar (and its nested `jars`),
+  collect `id` + `provides`, and verify every `depends` entry (except minecraft/java/fabricloader) is present.
+  Fix by setting the library's manifest to `side = "both"`, then refresh `index.toml` + `pack.toml` hashes.
+- **Minimum Fabric Loader for clients** = the highest `fabricloader` lower bound among the jars (0.19.4 today,
+  from JEI). Clients on an older loader (e.g. TLauncher's bundled "Fabric 1.20.1", 0.17.2) get "requires
+  version X or later of Fabric Loader". State the required loader in every release note; players install it
+  with the official Fabric installer (Client tab, 1.20.1, loader 0.19.5).
+- **Publishing the client zip:** as an asset of a GitHub Release on the modpack repo (tag
+  `client-YYYY-MM-DD[-n]`, `--target master`), using the GitHub CLI (`gh`, portable zip, log in with
+  `gh auth login --web`). Stable link:
+  `https://github.com/Ivan-Labudev/tancmeystery-modpack/releases/latest/download/tancmeystery-client-mods.zip`.
+  After publishing, download that link anonymously and compare the SHA-256. Delete a broken release together
+  with its tag (`gh release delete <tag> --cleanup-tag --yes`) once a fixed one is up.
 
 ## Running and checking the server
 
