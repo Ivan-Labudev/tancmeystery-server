@@ -14,10 +14,12 @@ pipeline; this file records what turned out to differ between machines.
   `run_deploy.ps1` finds the modpack as `<parent of mc-server>\tancmeystery-modpack`. The server repo must
   be cloned into a folder named `mc-server` (the GitHub repo name is `tancmeystery-server`, so use
   `git clone <url> mc-server`).
-- `start.ps1` **still hardcodes the JDK path**
-  (`C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot\bin\java.exe`). On another machine the Temurin
-  patch version (and folder name) will differ - check `Get-ChildItem "C:\Program Files\Eclipse Adoptium"` and
-  edit the path, or the server will not start. Also `-Xmx12G` assumes plenty of RAM; lower it on small machines.
+- `start.ps1` used to hardcode the JDK path (a specific Temurin patch folder), which breaks on any other
+  machine. It now finds Java itself: `JAVA_HOME`, then `java.exe` on `PATH`, then `jdk*` folders under
+  `Program Files\Eclipse Adoptium`, `\Java` and `\Microsoft`. Java 17 is preferred; anything older than 17
+  is rejected (checked from the exe's version info). `.\start.ps1 -DryRun` prints the Java it would use and
+  exits without starting the server - use it to check a new machine. If none is found it exits with code 1
+  and a message. `-Xmx12G -Xms4G` are still fixed in the script; lower them on machines with little RAM.
 - Do not put user names, tunnel addresses, RCON passwords or player nicknames in this repo (it is public).
 
 ## Setting up a second / test server
@@ -28,7 +30,8 @@ pipeline; this file records what turned out to differ between machines.
    `0.19.5` (the version pinned in `tancmeystery-modpack/pack.toml`) into `mc-server\`, write
    `eula.txt`, copy `server.properties.template` to `server.properties` and generate a **new** random
    `rcon.password` (never reuse the production one).
-3. `python sync_mods.py` downloads the pinned jars (verified against the sha512 in each `.pw.toml`).
+3. `.\start.ps1 -DryRun` confirms Java is found (no path edit needed any more), then `python sync_mods.py`
+   downloads the pinned jars (verified against the sha512 in each `.pw.toml`).
 4. `world/` and `backups/` are gitignored. To experiment on a copy of the live world, copy a backup tarball
    over and extract it so that `world\` sits in `mc-server\`. The Simon Says datapack is in
    `tancmeystery_datapack.zip`: extract it into `world\datapacks\tancmeystery\` so `pack.mcmeta` and `data\`
