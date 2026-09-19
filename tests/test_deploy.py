@@ -1,6 +1,7 @@
 import unittest
 
 import deploy
+from rcon_client import RconError
 
 
 class WarningMessageTests(unittest.TestCase):
@@ -90,6 +91,36 @@ class StopServerTests(unittest.TestCase):
         )
         self.assertFalse(result)
         self.assertEqual(killed, [111])
+
+    def test_connection_closed_by_server_during_stop_is_not_a_failure(self):
+        # Minecraft closes the RCON socket while shutting down, so reading the reply
+        # to "stop" raises "Connection closed" even though the stop was accepted.
+        # The first real deploy aborted here and left the server down.
+        for exc in (RconError("Connection closed while reading"), ConnectionResetError()):
+            with self.subTest(exc=type(exc).__name__):
+                class FakeRcon:
+                    def command(self, cmd):
+                        raise exc
+
+                alive_calls = {"count": 0}
+
+                def fake_is_alive(pid):
+                    alive_calls["count"] += 1
+                    return alive_calls["count"] < 2  # alive once, then gone
+
+                killed = []
+                result = deploy.stop_server(
+                    FakeRcon(),
+                    timeout=60,
+                    poll_interval=1,
+                    sleep=lambda s: None,
+                    log=lambda m: None,
+                    find_pids=lambda: [111],
+                    is_alive=fake_is_alive,
+                    kill=killed.append,
+                )
+                self.assertTrue(result)
+                self.assertEqual(killed, [])
 
 
     def test_returns_none_and_skips_wait_when_no_pids_found(self):

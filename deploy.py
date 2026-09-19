@@ -94,7 +94,13 @@ def kill_pid(pid):
 def stop_server(rcon, timeout=60, poll_interval=2, sleep=time.sleep, log=print,
                  find_pids=find_server_pids, is_alive=pid_alive, kill=kill_pid):
     pids = find_pids()
-    rcon.command("stop")
+    try:
+        rcon.command("stop")
+    except (RconError, ConnectionError):
+        # Minecraft closes the RCON socket while it shuts down, so reading the reply
+        # to "stop" fails with "Connection closed" even though the stop was accepted.
+        # The process-exit wait below is the real check, not this reply.
+        log("RCON connection closed during stop (expected while the server shuts down)")
     log("Sent RCON stop, waiting for process to exit")
 
     if not pids:
