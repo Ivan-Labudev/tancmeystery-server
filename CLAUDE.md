@@ -71,17 +71,30 @@ pipeline; this file records what turned out to differ between machines.
   publishing a client zip, check it offline: read `fabric.mod.json` of every jar (and its nested `jars`),
   collect `id` + `provides`, and verify every `depends` entry (except minecraft/java/fabricloader) is present.
   Fix by setting the library's manifest to `side = "both"`, then refresh `index.toml` + `pack.toml` hashes.
-- **Minimum Fabric Loader for clients** = the highest `fabricloader` lower bound among the jars (0.19.4 today,
-  from JEI). Clients on an older loader (e.g. TLauncher's bundled "Fabric 1.20.1", 0.17.2) get "requires
-  version X or later of Fabric Loader". State the required loader in every release note; players install it
-  with the official Fabric installer (Client tab, 1.20.1, loader 0.19.5).
-- **Decision: JEI and Farmer's Delight were removed on purpose.** Players' TLauncher ships Fabric Loader
-  0.17.2; JEI needs >= 0.19.4 and Farmer's Delight (bundled Porting Lib) >= 0.18.2, and Fabric refuses to start
-  the game if any single mod needs a newer loader. Do not re-add mods whose loader lower bound exceeds what the
-  players run - check the bound first (highest `fabricloader` requirement in the client zip is currently
-  0.16.10, from Fabric API). After removing a mod, delete its jar from `mc-server\mods` by hand - the deploy's
-  `sync_mods.py` never deletes - and expect harmless "missing from registry / unknown attribute" warnings once,
-  from leftover player data.
+- **Minimum Fabric Loader for clients** = the highest `fabricloader` lower bound among the jars (0.16.9 today,
+  from Fabric Language Kotlin). Clients on an older loader (e.g. TLauncher's bundled "Fabric 1.20.1", 0.17.2)
+  get "requires version X or later of Fabric Loader". State the required loader in every release note; players
+  install it with the official Fabric installer (Client tab, 1.20.1, loader 0.19.5).
+- **Decision: JEI, Farmer's Delight and Ranged Weapon API are pinned below their latest release on purpose.**
+  Players' TLauncher ships Fabric Loader 0.17.2. Latest JEI needs >= 0.19.4, latest Farmer's Delight (bundled
+  Porting Lib) >= 0.18.2, latest Ranged Weapon API (2.x, the version with the `velocity` attribute Jewelry
+  wants) >= 0.19.5 — all above the client floor, so Fabric would refuse to start the game for every player.
+  Pinned to the newest release still under 0.17.2 instead: JEI 15.49.0.194 (>=0.16.3), Farmer's Delight
+  2.5.2 (>=0.16), Ranged Weapon API 1.1.4 (>=0.15.7, but it only registers `damage`/`haste` — no `velocity`,
+  so that one Jewelry effect stays dead). Do not re-add a newer version of any of these without checking its
+  `fabricloader` floor first. After removing/downgrading a mod, delete the old jar from `mc-server\mods` by
+  hand - the deploy's `sync_mods.py` never deletes - and expect harmless "missing from registry / unknown
+  attribute" warnings once, from leftover player data.
+- **Decision: Visual Jukebox was tried and dropped; Ledger is pinned to 1.2.8, not the "latest".** Both are
+  server-only (never shipped to clients), so the 0.17.2 client floor above doesn't apply to them — the
+  constraint here is the *server's* Java 17 runtime instead. Visual Jukebox's only Modrinth build for 1.20.1
+  (1.0.0) ships a Mixin config that requires Mixin compatibility level JAVA_21, which throws at boot on Java 17
+  ("Level is not supported by the active JRE") — there is no older build to fall back to, so it's not in the
+  pack at all. Ledger's "latest" 1.20.1 build (1.3.18-backport) is compiled straight to Java 21 bytecode (class
+  file version 65) and crashes the server with `UnsupportedClassVersionError` on `net/minecraft/class_2248`
+  before a single mod even initializes — pinned to 1.2.8 (2023, Java 17 bytecode, still satisfies its
+  `fabric-language-kotlin >= 1.9.4` requirement against what we ship) instead. If bumping the server off Java
+  17 ever becomes worthwhile, both are worth revisiting.
 - **Publishing the client zip:** as an asset of a GitHub Release on the modpack repo (tag
   `client-YYYY-MM-DD[-n]`, `--target master`), using the GitHub CLI (`gh`, portable zip, log in with
   `gh auth login --web`). Stable link:
