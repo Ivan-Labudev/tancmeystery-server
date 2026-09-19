@@ -50,6 +50,13 @@ pipeline; this file records what turned out to differ between machines.
   (SYSTEM tasks and services do not prompt; the only startup items are asInvoker). Tested by running the task
   as Windows would: server up in ~6 s as `NT AUTHORITY\SYSTEM` in session 0, `Done` in ~14 s, task result 0,
   server keeps running after the task finishes. NOT tested with a real reboot.
+- **A server started by the boot task runs as SYSTEM and is half-invisible to a normal session.** In a
+  non-elevated PowerShell, `Get-CimInstance Win32_Process` returns no `CommandLine` for it, so
+  `... -like '*fabric-server-launch*'` finds nothing (looks like "server not running" while it is up), and a
+  manual `python deploy.py` from a normal session aborts at "Could not identify any server process to watch".
+  The scheduled deploy runs as SYSTEM and is unaffected. To check from a normal session use RCON `list`, the
+  listening port (`Get-NetTCPConnection -LocalPort 25565 -State Listen`) or `Get-Process java`; to run a
+  manual deploy or kill the server, use an elevated PowerShell.
 - The machine's PowerShell execution policy is `Undefined` everywhere, i.e. effectively `Restricted`. Every
   place that launches a script therefore passes `-ExecutionPolicy Bypass` explicitly (the tasks, and the child
   `powershell` started by `ensure_server_running.ps1` and `deploy.py`). Do not rely on inheriting Bypass.
