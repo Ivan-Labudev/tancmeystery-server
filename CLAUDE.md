@@ -105,6 +105,13 @@ pipeline; this file records what turned out to differ between machines.
   before a single mod even initializes — pinned to 1.2.8 (2023, Java 17 bytecode, still satisfies its
   `fabric-language-kotlin >= 1.9.4` requirement against what we ship) instead. If bumping the server off Java
   17 ever becomes worthwhile, both are worth revisiting.
+- **Build and gate the client zip with `tools/`** (needs Python 3.11+, run from `mc-server`):
+  `python tools\build_client_pack.py [--out PATH] [--player-loader 0.17.2]` builds the flat zip from the
+  manifests (sha512-verified, `side` both+client) and runs `tools\check_client_deps.py` on it first; the zip
+  is only written if every `depends` is satisfied and the players' loader is new enough for the whole set,
+  nested modules included. `python tools\check_client_deps.py <zip> [--player-loader X]` checks any zip
+  (exit 1 on problems). Verified against the real incident: it flags Farmer's Delight 2.5.2 via its nested
+  Porting Lib. Run this before every release; do not hand-roll the check.
 - **Publishing the client zip:** as an asset of a GitHub Release on the modpack repo (tag
   `client-YYYY-MM-DD[-n]`, `--target master`), using the GitHub CLI (`gh`, portable zip, log in with
   `gh auth login --web`). Stable link:
